@@ -333,11 +333,6 @@ export const SHARED_TOOL_CALL_EXAMPLE_LINES = [
     `    ✗ ${INCORRECT_INLINE_HEADER_AND_PAYLOAD_EXAMPLE}`,
 ]
 
-export const CONTINUE_TOOL_CALL_RESPONSE_EXAMPLE = [
-    "I need to inspect the file first.",
-    SINGLE_TOOL_CALL_RUN_LINE_EXAMPLE,
-].join("\n")
-
 export const EXIT_SUCCESS_RESPONSE_EXAMPLE = [
     "Everything is verified.",
     formatStructuredControlSegment("bash", "exit 0"),

@@ -1,6 +1,6 @@
 {
     "name": "hammer-ai",
-    "version": "0.2.4",
+    "version": "0.2.7",
     "description": "Infrastructure for building tool-calling bash-format chat agents: LLM client, agent loop, memory, tool registry, validation, and web runtime.",
     "type": "module",
     "main": "./dist/index.js",
