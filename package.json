@@ -1,0 +1,51 @@
+{
+    "name": "hammer-ai",
+    "version": "0.2.4",
+    "description": "Infrastructure for building tool-calling bash-format chat agents: LLM client, agent loop, memory, tool registry, validation, and web runtime.",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        },
+        "./node": {
+            "types": "./dist/node.d.ts",
+            "import": "./dist/node.js"
+        }
+    },
+    "files": [
+        "dist",
+        "README.md",
+        "LICENSE"
+    ],
+    "scripts": {
+        "clean": "rm -rf dist",
+        "build": "tsup",
+        "dev": "tsup --watch",
+        "prepublishOnly": "npm run clean && npm run build"
+    },
+    "keywords": [
+        "ai",
+        "agent",
+        "llm",
+        "tool-calling",
+        "bash",
+        "agentic-loop",
+        "memory",
+        "compaction"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "js-tiktoken": "^1.0.21",
+        "xstate": "5",
+        "zod": "^3.25.76"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "tsup": "^8.4.0",
+        "typescript": "^5.9.0"
+    }
+}
