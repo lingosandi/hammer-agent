@@ -44,6 +44,7 @@ export interface ToolLoopRuntimeLLMRequest {
     frequencyPenalty?: number
     presencePenalty?: number
     onToken?: (token: string) => void | boolean
+    onReasoningToken?: (token: string) => void
     normalizeResponseContent?: (content: string) => string
 }
 
@@ -210,18 +211,20 @@ export abstract class ToolLoopAgentRuntime<
             )
         }
 
+        const hasStreamCallbacks = Boolean(request.onToken ?? this.hooks.onToken ?? request.onReasoningToken)
         const response = await this.llmClient.chat(
             {
                 messages: request.messages,
                 temperature: request.temperature,
                 maxTokens: request.maxTokens,
-                stream: Boolean(request.onToken ?? this.hooks.onToken),
+                stream: hasStreamCallbacks,
                 frequencyPenalty: request.frequencyPenalty,
                 presencePenalty: request.presencePenalty,
             },
-            request.onToken || this.hooks.onToken
+            hasStreamCallbacks
                 ? {
                       onToken: request.onToken ?? this.hooks.onToken,
+                      onReasoningToken: request.onReasoningToken,
                   }
                 : undefined,
         )

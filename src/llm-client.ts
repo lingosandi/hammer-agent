@@ -338,8 +338,12 @@ export class LLMClient {
                             try {
                                 const parsed = JSON.parse(line.slice(6))
                                 const delta = parsed.choices?.[0]?.delta
+                                const reasoningToken = delta?.reasoning_content
+                                if (reasoningToken) {
+                                    callbacks?.onReasoningToken?.(reasoningToken)
+                                }
                                 const token = delta?.content
-                                if (!token && delta) {
+                                if (!token && !reasoningToken && delta) {
                                     log(`SSE delta (no content): ${JSON.stringify(delta).slice(0, 200)}`, "warn")
                                 }
                                 if (token) {

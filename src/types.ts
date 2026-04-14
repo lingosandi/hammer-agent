@@ -53,6 +53,12 @@ export interface StreamCallbacks {
      */
     onToken?: (token: string) => void | boolean
     /**
+     * Fired for every reasoning/thinking token received
+     * (delta.reasoning_content). Called before any content tokens arrive
+     * for models that emit a thinking phase (e.g. Qwen 3+).
+     */
+    onReasoningToken?: (token: string) => void
+    /**
      * Fired once when the first SSE data chunk arrives from the model.
      * Useful for closing premature-cancellation windows: Qwen 3+ models
      * send reasoning tokens (delta.reasoning_content) for several seconds

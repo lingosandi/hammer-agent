@@ -618,16 +618,36 @@ export abstract class WebToolLoopAgentRuntime<
         const runDetector = new StreamingToolParser({
             allowedRunTargets: this.getParserRunTargets(),
         })
+        let reasoningStarted = false
 
         return {
             messages,
             temperature: options.temperature,
             maxTokens: options.maxTokens,
             normalizeResponseContent: () => runDetector.getFullContent(),
+            onReasoningToken: (token: string) => {
+                if (runId === undefined) return
+                if (!reasoningStarted) {
+                    reasoningStarted = true
+                    this.appendStreamingToken(runId, "💭 thinking…\n")
+                }
+                this.appendStreamingToken(runId, token)
+            },
             onToken: (token: string) => {
                 runDetector.push(token)
 
                 if (runId !== undefined) {
+                    if (reasoningStarted) {
+                        // Transition from reasoning to content — clear the
+                        // thinking preview so only the real response shows.
+                        reasoningStarted = false
+                        this.clearPendingStreamingContent(runId)
+                        this.updateSnapshotForRun(runId, (state) => ({
+                            ...state,
+                            streamingContent: "",
+                        }))
+                    }
+
                     if (runDetector.sealed) {
                         this.clearPendingStreamingContent(runId)
                         this.updateSnapshotForRun(runId, (state) => ({
