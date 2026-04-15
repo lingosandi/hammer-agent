@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest"
 import {
     createMemoryMetadata,
     buildCompactionEntry,
-    sanitizeMemoryProvenance,
     cleanCompactionText,
     canonicalizeCompactionText,
     summarizeCompactionText,
@@ -10,7 +9,6 @@ import {
     selectLatestByKey,
     limitEntriesByRecency,
     formatMemoryMetadataTag,
-    sanitizeCompactionEntries,
 } from "../src/memory-compaction-utils"
 
 describe("createMemoryMetadata", () => {
@@ -158,34 +156,6 @@ describe("formatMemoryMetadataTag", () => {
     })
 })
 
-describe("sanitizeMemoryProvenance", () => {
-    test("returns valid provenance", () => {
-        const result = sanitizeMemoryProvenance(
-            { source: "llm", detail: "test" },
-            { source: "user" },
-        )
-        expect(result).toEqual({ source: "llm", detail: "test" })
-    })
-
-    test("returns fallback for null", () => {
-        const fallback = { source: "user" as const }
-        expect(sanitizeMemoryProvenance(null, fallback)).toBe(fallback)
-    })
-
-    test("returns fallback for invalid source", () => {
-        const fallback = { source: "user" as const }
-        expect(sanitizeMemoryProvenance({ source: "unknown" }, fallback)).toBe(fallback)
-    })
-
-    test("uses fallback detail when detail is not a string", () => {
-        const result = sanitizeMemoryProvenance(
-            { source: "llm", detail: 123 },
-            { source: "user", detail: "fallback-detail" },
-        )
-        expect(result.detail).toBe("fallback-detail")
-    })
-})
-
 describe("buildCompactionEntry", () => {
     test("builds entry with all transformations", () => {
         const result = buildCompactionEntry({
@@ -229,41 +199,3 @@ describe("buildCompactionEntry", () => {
     })
 })
 
-describe("sanitizeCompactionEntries", () => {
-    test("returns empty for non-array input", () => {
-        expect(sanitizeCompactionEntries("not an array", {})).toEqual([])
-        expect(sanitizeCompactionEntries(null, {})).toEqual([])
-    })
-
-    test("processes string entries", () => {
-        const result = sanitizeCompactionEntries(
-            ["hello", "world"],
-            { fromString: (s) => s.toUpperCase() },
-        )
-        expect(result).toEqual(["HELLO", "WORLD"])
-    })
-
-    test("processes object entries", () => {
-        const result = sanitizeCompactionEntries(
-            [{ text: "note" }],
-            { fromObject: (obj) => obj.text as string },
-        )
-        expect(result).toEqual(["note"])
-    })
-
-    test("filters null results", () => {
-        const result = sanitizeCompactionEntries(
-            ["keep", "skip", "keep2"],
-            { fromString: (s) => (s === "skip" ? null : s) },
-        )
-        expect(result).toEqual(["keep", "keep2"])
-    })
-
-    test("skips non-string non-object values", () => {
-        const result = sanitizeCompactionEntries(
-            [42, true, null, undefined],
-            { fromString: (s) => s },
-        )
-        expect(result).toEqual([])
-    })
-})

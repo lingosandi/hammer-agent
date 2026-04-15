@@ -53,26 +53,6 @@ export function buildCompactionEntry<T>(options: {
     )
 }
 
-export function sanitizeMemoryProvenance(
-    value: unknown,
-    fallback: MemoryProvenance,
-): MemoryProvenance {
-    if (!value || typeof value !== "object") {
-        return fallback
-    }
-
-    const candidate = value as Record<string, unknown>
-    const source = typeof candidate.source === "string" ? candidate.source : undefined
-    if (!source || !MEMORY_PROVENANCE_SOURCES.has(source as MemoryProvenance["source"])) {
-        return fallback
-    }
-
-    return {
-        source: source as MemoryProvenance["source"],
-        detail: typeof candidate.detail === "string" ? candidate.detail : fallback.detail,
-    }
-}
-
 export function cleanCompactionText(text: string): string {
     return text.trim().replace(/\s+/g, " ").replace(/[.?!:;]+$/, "")
 }
@@ -173,32 +153,6 @@ export function formatMemoryMetadataTag(metadata: MemoryMetadataLike): string {
     return ` [${metadata.provenance.source}${detail}]`
 }
 
-export function sanitizeCompactionEntries<T>(
-    input: unknown,
-    options: {
-        fromString?: (value: string) => T | null
-        fromObject?: (value: Record<string, unknown>) => T | null
-    },
-): T[] {
-    if (!Array.isArray(input)) {
-        return []
-    }
-
-    return input.flatMap((value) => {
-        if (typeof value === "string") {
-            const entry = options.fromString?.(value)
-            return entry ? [entry] : []
-        }
-
-        if (!value || typeof value !== "object") {
-            return []
-        }
-
-        const entry = options.fromObject?.(value as Record<string, unknown>)
-        return entry ? [entry] : []
-    })
-}
-
 export function createEntrySanitizer<T>(options: {
     defaultProvenance: MemoryProvenance
     fromString?: (value: string, context: MemoryEntrySanitizerContext) => T | null
@@ -206,36 +160,36 @@ export function createEntrySanitizer<T>(options: {
     getTurn?: (value: Record<string, unknown>, fallbackTurn: number) => number
     getProvenance?: (value: Record<string, unknown>) => unknown
 }): (input: unknown, fallbackTurn: number, fallbackProvenance?: MemoryProvenance) => T[] {
-    return (input, fallbackTurn, fallbackProvenance = options.defaultProvenance) =>
-        sanitizeCompactionEntries(input, {
-            fromString: options.fromString
-                ? (value) => options.fromString!(value, {
-                    turn: fallbackTurn,
-                    provenance: fallbackProvenance,
-                })
-                : undefined,
-            fromObject: (value) => options.fromObject(value, {
-                turn: options.getTurn?.(value, fallbackTurn)
-                    ?? (typeof value.turn === "number" && Number.isFinite(value.turn)
-                        ? value.turn
+    return (input, fallbackTurn, fallbackProvenance = options.defaultProvenance) => {
+        if (!Array.isArray(input)) return []
+        return input.flatMap((value) => {
+            if (typeof value === "string") {
+                const entry = options.fromString?.(value, { turn: fallbackTurn, provenance: fallbackProvenance })
+                return entry ? [entry] : []
+            }
+            if (!value || typeof value !== "object") return []
+            const obj = value as Record<string, unknown>
+            const rawProv = options.getProvenance?.(obj) ?? obj.provenance
+            let provenance = fallbackProvenance
+            if (rawProv && typeof rawProv === "object") {
+                const c = rawProv as Record<string, unknown>
+                const source = typeof c.source === "string" ? c.source : undefined
+                if (source && MEMORY_PROVENANCE_SOURCES.has(source as MemoryProvenance["source"])) {
+                    provenance = {
+                        source: source as MemoryProvenance["source"],
+                        detail: typeof c.detail === "string" ? c.detail : fallbackProvenance.detail,
+                    }
+                }
+            }
+            const entry = options.fromObject(obj, {
+                turn: options.getTurn?.(obj, fallbackTurn)
+                    ?? (typeof obj.turn === "number" && Number.isFinite(obj.turn)
+                        ? obj.turn
                         : fallbackTurn),
-                provenance: sanitizeMemoryProvenance(
-                    options.getProvenance?.(value) ?? value.provenance,
-                    fallbackProvenance,
-                ),
-            }),
+                provenance,
+            })
+            return entry ? [entry] : []
         })
-}
-
-export function parseCompactionJsonObject(raw: string): Record<string, unknown> | null {
-    try {
-        const cleaned = raw.replace(/```json\n?|```\n?/gi, "").trim()
-        const parsed = JSON.parse(cleaned)
-        return parsed && typeof parsed === "object"
-            ? parsed as Record<string, unknown>
-            : null
-    } catch {
-        return null
     }
 }
 
@@ -277,6 +231,13 @@ export async function runStructuredLLMCompaction<
         stream: false,
     })
 
-    const parsed = parseCompactionJsonObject(result.content)
+    let parsed: Record<string, unknown> | null = null
+    try {
+        const cleaned = result.content.replace(/```json\n?|```\n?/gi, "").trim()
+        const obj = JSON.parse(cleaned)
+        parsed = obj && typeof obj === "object" ? obj as Record<string, unknown> : null
+    } catch {
+        parsed = null
+    }
     return parsed ? options.parseState(parsed) : null
 }

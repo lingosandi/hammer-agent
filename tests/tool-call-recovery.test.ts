@@ -7,7 +7,6 @@ import {
     buildValidationErrorMessage,
     buildNoStructuredResponseFoundError,
     recoverTruncatedResponse,
-    buildParseFeedback,
     parseResponseWithRecovery,
 } from "../src/tool-call-recovery"
 
@@ -392,42 +391,6 @@ describe("recoverTruncatedResponse", () => {
                 ].join("\n"),
             },
         })
-    })
-})
-
-describe("buildParseFeedback", () => {
-    test("returns validation-specific feedback when zod details are provided", () => {
-        const result = buildParseFeedback("bad response", {
-            issues: [
-                {
-                    path: ["outcome"],
-                    message: "Required",
-                    code: "invalid_type",
-                    received: undefined,
-                    expected: "string",
-                },
-            ],
-        })
-        expect(result).toContain("VALIDATION_ERROR")
-        expect(result).toContain("terminal state")
-    })
-
-    test("reuses the no-structured-response guidance otherwise", () => {
-        const result = buildParseFeedback("some invalid content")
-        expect(result).toContain('did not end with an executable control block')
-        expect(result).toContain(VALIDATION_FIX_REFERENCE)
-    })
-
-    test("passes through explicit validation feedback for misrouted bash tool calls", () => {
-        const result = buildParseFeedback(
-            toolSegment("bash --command ls"),
-            new Error(
-                'VALIDATION_ERROR: Bash is not a registered tool name. You wrote a tool payload with a bash command. Use the ---bash--- header instead.',
-            ),
-        )
-
-        expect(result).toContain("Bash is not a registered tool name")
-        expect(result).toContain('Use the ---bash--- header instead')
     })
 })
 

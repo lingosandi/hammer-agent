@@ -202,23 +202,6 @@ function shouldPreferBashToolLogRecovery(
     )
 }
 
-/**
- * Build a user-feedback message to send to the LLM when its response failed
- * to parse. Gives more actionable guidance than a generic "parse failed" message.
- *
- * @param content     The raw LLM content that failed to parse
- * @param zodError    Optional Zod validation error for field-specific feedback
- * @returns           A feedback string to send as a user message
- */
-export function buildParseFeedback(_content: string, zodError?: unknown): string {
-    // Check if there's Zod field-level detail
-    if (zodError) {
-        return buildValidationErrorMessage(zodError)
-    }
-
-    return buildNoStructuredResponseFoundError()
-}
-
 // ---------------------------------------------------------------------------
 // Unified three-tier parsing cascade
 // ---------------------------------------------------------------------------

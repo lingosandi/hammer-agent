@@ -21,40 +21,6 @@ import type {
 } from "./types"
 import { getStreamInactivityTimeout, getFirstChunkTimeout } from "./configure"
 
-function shouldOmitTemperature(config: LLMProviderConfig): boolean {
-    return config.model === "kimi-k2.5"
-}
-
-function buildChatPayload(
-    config: LLMProviderConfig,
-    basePayload: {
-        model: string
-        messages: LLMRequestOptions["messages"]
-        temperature: number
-        max_tokens: number
-        frequency_penalty: number
-        presence_penalty: number
-        stream: boolean
-    },
-): Record<string, unknown> {
-    const payload: Record<string, unknown> = { ...basePayload }
-
-    // Moonshot's kimi-k2.5 rejects caller-specified temperature values.
-    // Omitting the field lets the API apply its own fixed mode-specific value.
-    if (shouldOmitTemperature(config)) {
-        delete payload.temperature
-    }
-
-    // Honour explicit thinking-mode preference set by the consumer.
-    // Maps to the DashScope `enable_thinking` body field for Qwen3 models.
-    // When undefined, no field is sent and the provider uses its model default.
-    if (config.enableThinking !== undefined) {
-        payload.enable_thinking = config.enableThinking
-    }
-
-    return payload
-}
-
 // ---------------------------------------------------------------------------
 // LLMClient
 // ---------------------------------------------------------------------------
@@ -100,15 +66,27 @@ export class LLMClient {
             signal
         } = options
 
-        const payload = buildChatPayload(this.config, {
+        const payload: Record<string, unknown> = {
             model: this.config.model,
             messages,
             temperature,
             max_tokens: maxTokens,
             frequency_penalty: frequencyPenalty,
             presence_penalty: presencePenalty,
-            stream
-        })
+            stream,
+        }
+        // Moonshot's kimi-k2.5 rejects caller-specified temperature values.
+        // Omitting the field lets the API apply its own fixed mode-specific value.
+        if (this.config.model === "kimi-k2.5") {
+            delete payload.temperature
+        }
+        // Honour explicit thinking-mode preference set by the consumer.
+        // Maps to the DashScope `enable_thinking` body field for Qwen3 models.
+        // When undefined, no field is sent and the provider uses its model default.
+        if (this.config.enableThinking !== undefined) {
+            payload.enable_thinking = this.config.enableThinking
+        }
+
         const headers: Record<string, string> = {
             "Content-Type": "application/json",
             Authorization: `Bearer ${this.config.apiKey}`,
@@ -129,7 +107,7 @@ export class LLMClient {
 
                 if (attempt > 1) {
                     log(`Retry attempt ${attempt}/${maxRetries}…`, "warn")
-                    await sleep(1000 * attempt)
+                    await new Promise<void>((r) => setTimeout(r, 1000 * attempt))
                 }
 
                 const controller = new AbortController()
@@ -150,7 +128,7 @@ export class LLMClient {
                         const errorText = await response.text()
                         const err = new ApiError(response.status, errorText)
                         // Retry on transient HTTP errors (502, 503, 429, etc.)
-                        if (isRetryableStatus(response.status) && attempt < maxRetries) {
+                        if ((response.status === 429 || response.status === 500 || response.status === 502 || response.status === 503 || response.status === 408) && attempt < maxRetries) {
                             log(`Transient HTTP ${response.status}. Retrying…`, "warn")
                             lastError = err
                             continue
@@ -396,9 +374,6 @@ export class LLMClient {
 
         try {
             await streamPromise
-        } catch (err: any) {
-            if (err.message?.includes("getFirstChunkTimeout()")) throw err
-            throw err
         } finally {
             cleanup()
             signal?.removeEventListener("abort", abortStream)
@@ -430,11 +405,6 @@ export class ApiError extends Error {
         super(`API error ${status}: ${body}`)
         this.name = "ApiError"
     }
-}
-
-/** HTTP status codes that indicate a transient/retryable server error. */
-function isRetryableStatus(status: number): boolean {
-    return status === 429 || status === 500 || status === 502 || status === 503 || status === 408
 }
 
 export function isNetworkError(err: any): boolean {
@@ -476,6 +446,3 @@ function createAbortError(reason?: unknown): Error {
     return error
 }
 
-function sleep(ms: number): Promise<void> {
-    return new Promise((r) => setTimeout(r, ms))
-}

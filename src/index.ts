@@ -184,7 +184,6 @@ export {
 
 export {
     parseResponseWithRecovery,
-    buildParseFeedback,
     formatZodValidationError,
     buildValidationErrorMessage,
     buildNoStructuredResponseFoundError,

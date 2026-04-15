@@ -26,7 +26,7 @@ import type {
 } from "./runtime-store"
 import {
     parseResponseWithRecovery,
-    buildParseFeedback,
+    buildNoStructuredResponseFoundError,
 } from "./tool-call-recovery"
 import {
     ToolLoopAgentRuntime,
@@ -694,7 +694,7 @@ export abstract class WebToolLoopAgentRuntime<
 
         if (!stepParsed) {
             const parseError: WebToolLoopRuntimeError = new Error(
-                buildParseFeedback(response.content),
+                buildNoStructuredResponseFoundError(),
             )
             parseError.isWebParseFailure = true
             parseError.rawContent = response.content
