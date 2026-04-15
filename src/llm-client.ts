@@ -45,6 +45,13 @@ function buildChatPayload(
         delete payload.temperature
     }
 
+    // Honour explicit thinking-mode preference set by the consumer.
+    // Maps to the DashScope `enable_thinking` body field for Qwen3 models.
+    // When undefined, no field is sent and the provider uses its model default.
+    if (config.enableThinking !== undefined) {
+        payload.enable_thinking = config.enableThinking
+    }
+
     return payload
 }
 

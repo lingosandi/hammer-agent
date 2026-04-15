@@ -29,6 +29,20 @@ export interface LLMProviderConfig {
     extraHeaders?: Record<string, string>
     /** Custom fetch implementation (e.g. expo/fetch for RN streaming support). */
     fetchImpl?: FetchLike
+    /**
+     * Explicitly enable or disable the provider's thinking/reasoning mode.
+     *
+     * - `false` — disables thinking (e.g. DashScope `enable_thinking: false` for
+     *   Qwen3 models, which have thinking on by default). Prevents the silent
+     *   multi-minute server-side CoT delay before the first token streams out.
+     * - `true`  — explicitly enables thinking with the provider's default budget.
+     * - `undefined` — no thinking-related field is sent; the provider uses its
+     *   own model default.
+     *
+     * Currently maps to `enable_thinking` in the request body, which is the
+     * DashScope OpenAI-compatible API parameter for Qwen3 models.
+     */
+    enableThinking?: boolean
 }
 
 /** Options for a single chat completion request. */
