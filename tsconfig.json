@@ -9,7 +9,8 @@
         "declaration": true,
         "declarationMap": true,
         "sourceMap": true,
-        "outDir": "dist"
+        "outDir": "dist",
+        "rootDir": "src"
     },
     "include": ["src/**/*.ts"],
     "exclude": ["node_modules", "dist"]

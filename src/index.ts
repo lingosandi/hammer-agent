@@ -282,6 +282,11 @@ export {
 } from "./Tool"
 
 export {
+    SubAgentTool,
+    type SubAgentToolOptions,
+} from "./sub-agent"
+
+export {
     ToolRegistry,
     createToolRegistry,
     type ToolRegistryOptions,
