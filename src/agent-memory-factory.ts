@@ -29,7 +29,6 @@ const SHARED_WORKSPACE_AGENT_MEMORY_PRESET = {
     compactionTokenThreshold: Math.floor(DEFAULT_MAX_CONTEXT_TOKENS * 0.75),  // 150_000
     protectedContextTokens: Math.floor(DEFAULT_MAX_CONTEXT_TOKENS * 0.30),    //  60_000
     stateBudgetTokens: Math.floor(DEFAULT_MAX_CONTEXT_TOKENS * 0.05),         //  10_000
-    maxRawHistory: 2_000,
     compactionDebounceTurns: 3,
     systemPromptOverhead: 4_000,
     toolMemoryExtractor: DEFAULT_TOOL_MEMORY_EXTRACTOR,
@@ -71,7 +70,6 @@ export function createAgentMemoryLayer(
         compactionTokenThreshold: SHARED_WORKSPACE_AGENT_MEMORY_PRESET.compactionTokenThreshold,
         protectedContextTokens: SHARED_WORKSPACE_AGENT_MEMORY_PRESET.protectedContextTokens,
         stateBudgetTokens: SHARED_WORKSPACE_AGENT_MEMORY_PRESET.stateBudgetTokens,
-        maxRawHistory: SHARED_WORKSPACE_AGENT_MEMORY_PRESET.maxRawHistory,
         compactionDebounceTurns: SHARED_WORKSPACE_AGENT_MEMORY_PRESET.compactionDebounceTurns,
         systemPromptOverhead: SHARED_WORKSPACE_AGENT_MEMORY_PRESET.systemPromptOverhead,
         tokenEstimator: overrides?.tokenEstimator ?? new CharTokenEstimator(),

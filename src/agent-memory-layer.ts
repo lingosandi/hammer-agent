@@ -972,8 +972,6 @@ export interface AgentMemoryLayerConfig {
     protectedContextTokens: number
     /** Token budget for the rendered compressed state block. */
     stateBudgetTokens: number
-    /** Hard cap on raw history entries. */
-    maxRawHistory: number
     /** Minimum turns between compaction attempts. */
     compactionDebounceTurns: number
     /** Token estimate for the system prompt. */
@@ -1032,7 +1030,6 @@ export class AgentMemoryLayer extends BaseMemoryLayer<CompressedAgentState, RawM
                 compactionTokenThreshold: config.compactionTokenThreshold,
                 protectedContextTokens: config.protectedContextTokens,
                 stateBudgetTokens: config.stateBudgetTokens,
-                maxRawHistory: config.maxRawHistory,
                 compactionDebounceTurns: config.compactionDebounceTurns,
                 systemPromptOverhead: config.systemPromptOverhead,
                 tokenEstimator: config.tokenEstimator,

@@ -21,7 +21,6 @@ const HAMMER_COMPACTION_TOKEN_THRESHOLD = 150_000
 const HAMMER_PROTECTED_CONTEXT_TOKENS = 60_000
 const HAMMER_STATE_BUDGET_TOKENS = 10_000
 const HAMMER_SYSTEM_PROMPT_OVERHEAD = 4_000
-const HAMMER_MAX_RAW_HISTORY = 2_000
 const HAMMER_COMPACTION_DEBOUNCE_TURNS = 3
 const COMPACTION_LLM_TEMPERATURE = 0.1
 const COMPACTION_LLM_MAX_TOKENS = 4096
@@ -125,7 +124,6 @@ function testConfig(overrides?: Partial<AgentMemoryLayerConfig>): AgentMemoryLay
         compactionTokenThreshold: HAMMER_COMPACTION_TOKEN_THRESHOLD,
         protectedContextTokens: HAMMER_PROTECTED_CONTEXT_TOKENS,
         stateBudgetTokens: HAMMER_STATE_BUDGET_TOKENS,
-        maxRawHistory: HAMMER_MAX_RAW_HISTORY,
         compactionDebounceTurns: HAMMER_COMPACTION_DEBOUNCE_TURNS,
         systemPromptOverhead: HAMMER_SYSTEM_PROMPT_OVERHEAD,
         tokenEstimator: new TiktokenEstimator(),
@@ -241,6 +239,16 @@ describe("AgentMemoryLayer — appendMessage", () => {
         expect(history[0].turn).toBe(1)
         expect(history[1].turn).toBe(2)
         expect(history[2].turn).toBe(3)
+    })
+
+    test("does not prune raw history by message count", () => {
+        const layer = tracked(createLayer())
+        for (let i = 0; i < 2_100; i++) {
+            layer.appendMessage({ role: "user", content: `message ${i}` })
+        }
+
+        expect(layer.getRawHistory()).toHaveLength(2_100)
+        expect(layer.getRawHistory()[0].content).toBe("message 0")
     })
 
     test("computes token count for each message", () => {
