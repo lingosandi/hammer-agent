@@ -81,10 +81,18 @@ export class LLMClient {
             delete payload.temperature
         }
         // Honour explicit thinking-mode preference set by the consumer.
-        // Maps to the DashScope `enable_thinking` body field for Qwen3 models.
+        // Maps to provider-specific request fields:
+        // - DeepSeek: `thinking: { type: "enabled" | "disabled" }`
+        // - Qwen/DashScope: `enable_thinking`
         // When undefined, no field is sent and the provider uses its model default.
         if (this.config.enableThinking !== undefined) {
-            payload.enable_thinking = this.config.enableThinking
+            if (isDeepSeekRequest(this.config)) {
+                payload.thinking = {
+                    type: this.config.enableThinking ? "enabled" : "disabled",
+                }
+            } else {
+                payload.enable_thinking = this.config.enableThinking
+            }
         }
 
         const headers: Record<string, string> = {
@@ -393,6 +401,10 @@ export class LLMClient {
             finishReason: finishReason || (streamFrozen ? "length" : "stop")
         }
     }
+}
+
+function isDeepSeekRequest(config: LLMProviderConfig): boolean {
+    return /deepseek/i.test(config.model) || /deepseek\.com/i.test(config.baseUrl)
 }
 
 // ---------------------------------------------------------------------------

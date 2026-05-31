@@ -21,6 +21,8 @@ export interface HammerAgentProviderPreset {
     model: string
     /** Extra headers merged into every request (e.g. HTTP-Referer for OpenRouter). */
     extraHeaders?: Record<string, string>
+    /** Provider-specific thinking/reasoning toggle (Qwen/DeepSeek). */
+    enableThinking?: boolean
 }
 
 /**

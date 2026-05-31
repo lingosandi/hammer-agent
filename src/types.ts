@@ -33,14 +33,14 @@ export interface LLMProviderConfig {
      * Explicitly enable or disable the provider's thinking/reasoning mode.
      *
      * - `false` — disables thinking (e.g. DashScope `enable_thinking: false` for
-     *   Qwen3 models, which have thinking on by default). Prevents the silent
-     *   multi-minute server-side CoT delay before the first token streams out.
+     *   Qwen3 models, or DeepSeek `thinking: { type: "disabled" }`).
      * - `true`  — explicitly enables thinking with the provider's default budget.
      * - `undefined` — no thinking-related field is sent; the provider uses its
      *   own model default.
      *
-     * Currently maps to `enable_thinking` in the request body, which is the
-     * DashScope OpenAI-compatible API parameter for Qwen3 models.
+     * Currently maps to provider-specific request fields:
+     * - Qwen/DashScope: `enable_thinking`
+     * - DeepSeek: `thinking: { type: "enabled" | "disabled" }`
      */
     enableThinking?: boolean
 }
@@ -207,6 +207,9 @@ export interface LLMResponse {
 export type ProviderName =
     | "qwen-max"
     | "qwen-plus"
+    | "deepseek"
+    | "deepseek-chat"
+    | "deepseek-reasoner"
     | "openrouter-claude"
     | "openrouter-gemini"
     | "minimax"
