@@ -1,28 +1,15 @@
 import { describe, expect, test } from "vitest"
 
 import {
-    truncateToolResult,
+    truncateHead,
+    truncateTail,
     executeToolSafe,
     formatToolResultMessage,
     parseToolResultMessage,
-    MAX_TOOL_RESULT_CHARS,
 } from "../src/tool-helpers"
 import type { ToolCall } from "../src/types"
 
 describe("tool-helpers", () => {
-    test("truncateToolResult leaves short strings untouched", () => {
-        expect(truncateToolResult("hello")).toBe("hello")
-        expect(truncateToolResult("x".repeat(MAX_TOOL_RESULT_CHARS))).toBe(
-            "x".repeat(MAX_TOOL_RESULT_CHARS),
-        )
-    })
-
-    test("truncateToolResult shortens oversized output", () => {
-        const result = truncateToolResult("x".repeat(40000), { strategy: "head-tail" })
-        expect(result).toContain("chars truncated")
-        expect(result.length).toBeLessThan(40000)
-    })
-
     test("executeToolSafe converts thrown errors into failures", async () => {
         const result = await executeToolSafe(async () => {
             throw new Error("Something broke")
@@ -63,5 +50,61 @@ describe("tool-helpers", () => {
         expect(parsed.toolName).toBe("cat")
         expect(parsed.parsed?.path).toBe("package.json")
         expect(parsed.parsed?.output).toContain('"name"')
+    })
+
+    test("formatToolResultMessage uses pi-style truncation notice for large read-like outputs", () => {
+        const toolCall: ToolCall = {
+            kind: "tool",
+            name: "ReadScenegraph",
+            parameters: { id: "root" },
+        }
+
+        const bigOutput = Array.from({ length: 2500 }, (_, i) => `Line ${i + 1}`).join("\n")
+        const formatted = formatToolResultMessage(toolCall, {
+            success: true,
+            output: bigOutput,
+        })
+
+        expect(formatted).toContain("[Showing lines 1-2000 of 2500. Use offset=2001 to continue.]")
+        expect(formatted).toContain("Line 1")
+        expect(formatted).toContain("Line 2000")
+        expect(formatted).not.toContain("Use more specific commands")
+    })
+
+    test("formatToolResultMessage keeps tail for large bash outputs", () => {
+        const toolCall: ToolCall = {
+            kind: "bash",
+            name: "Bash",
+            parameters: { command: "cat huge.log" },
+        }
+
+        const bigOutput = Array.from({ length: 2500 }, (_, i) => `Line ${i + 1}`).join("\n")
+        const formatted = formatToolResultMessage(toolCall, {
+            success: true,
+            output: bigOutput,
+            command: "cat huge.log",
+        })
+
+        expect(formatted).toContain("[Showing lines 501-2500 of 2500.]")
+        expect(formatted).toContain("Line 2500")
+        expect(formatted).not.toContain("Line 1\nLine 2")
+    })
+
+    test("truncateHead reports firstLineExceedsLimit", () => {
+        const result = truncateHead("éé\nabc", { maxBytes: 3, maxLines: 10 })
+
+        expect(result.truncated).toBe(true)
+        expect(result.truncatedBy).toBe("bytes")
+        expect(result.firstLineExceedsLimit).toBe(true)
+        expect(result.content).toBe("")
+    })
+
+    test("truncateTail preserves UTF-8 boundaries for partial line tails", () => {
+        const result = truncateTail("aé🙂b", { maxBytes: 5, maxLines: 10 })
+
+        expect(result.truncated).toBe(true)
+        expect(result.truncatedBy).toBe("bytes")
+        expect(result.lastLinePartial).toBe(true)
+        expect(result.content).toBe("🙂b")
     })
 })

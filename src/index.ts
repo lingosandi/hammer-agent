@@ -228,7 +228,7 @@ export {
     type CommandTargetInfo,
 } from "./unix-tooling"
 
-export { truncateToolResult, executeToolSafe, formatToolResultMessage, parseToolResultMessage, MAX_TOOL_RESULT_CHARS } from "./tool-helpers"
+export { executeToolSafe, formatToolResultMessage, parseToolResultMessage } from "./tool-helpers"
 
 // ── Streaming parser ──────────────────────────────────────────────────────────
 export { StreamingToolParser, type StreamingToolParserCallbacks } from "./streaming-tool-parser"

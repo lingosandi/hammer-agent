@@ -12,46 +12,201 @@ import { formatToolCallAsUnixCommand } from "./unix-tooling"
 // Tool result truncation
 // ---------------------------------------------------------------------------
 
-/** Default maximum characters for tool result strings. */
-export const MAX_TOOL_RESULT_CHARS = 30_000
-const MAX_PRESENTATION_LINES = 200
-const MAX_PRESENTATION_CHARS = 50_000
+export const DEFAULT_MAX_LINES = 2000
+export const DEFAULT_MAX_BYTES = 50 * 1024
 
-export interface TruncateOptions {
-    /** Maximum character length (default: 30,000). */
-    maxChars?: number
-    /**
-     * Truncation strategy:
-     * - `"head-tail"`: Keep first half + last half (preserves end of large outputs).
-     * - `"head-only"`: Keep the first N characters.
-     */
-    strategy?: "head-tail" | "head-only"
+export interface TruncationResult {
+    content: string
+    truncated: boolean
+    truncatedBy: "lines" | "bytes" | null
+    totalLines: number
+    totalBytes: number
+    outputLines: number
+    outputBytes: number
+    lastLinePartial: boolean
+    firstLineExceedsLimit: boolean
+    maxLines: number
+    maxBytes: number
+}
+
+export interface TruncationOptions {
+    maxLines?: number
+    maxBytes?: number
+}
+
+function splitLinesForCounting(content: string): string[] {
+    if (content.length === 0) {
+        return []
+    }
+
+    const lines = content.split("\n")
+    if (content.endsWith("\n")) {
+        lines.pop()
+    }
+    return lines
 }
 
 /**
- * Truncate an oversized tool result string to stay within LLM context limits.
- *
- * @returns The original string if within limit, otherwise a truncated version.
+ * Truncate content from the head (keep first N lines/bytes).
+ * Never returns partial lines. If first line exceeds byte limit,
+ * returns empty content with firstLineExceedsLimit=true.
  */
-export function truncateToolResult(
-    resultStr: string,
-    options?: TruncateOptions,
-): string {
-    const maxChars = options?.maxChars ?? MAX_TOOL_RESULT_CHARS
-    const strategy = options?.strategy ?? "head-tail"
+export function truncateHead(
+    content: string,
+    options: TruncationOptions = {},
+): TruncationResult {
+    const maxLines = options.maxLines ?? DEFAULT_MAX_LINES
+    const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES
 
-    if (resultStr.length <= maxChars) return resultStr
+    const totalBytes = utf8ByteLength(content)
+    const lines = splitLinesForCounting(content)
+    const totalLines = lines.length
 
-    if (strategy === "head-only") {
-        return resultStr.substring(0, maxChars) + "\n...(truncated)"
+    if (totalLines <= maxLines && totalBytes <= maxBytes) {
+        return {
+            content,
+            truncated: false,
+            truncatedBy: null,
+            totalLines,
+            totalBytes,
+            outputLines: totalLines,
+            outputBytes: totalBytes,
+            lastLinePartial: false,
+            firstLineExceedsLimit: false,
+            maxLines,
+            maxBytes,
+        }
     }
 
-    // head-tail: keep first half and last half
-    const half = Math.floor(maxChars / 2)
-    const head = resultStr.substring(0, half)
-    const tail = resultStr.substring(resultStr.length - half)
-    const omitted = resultStr.length - maxChars
-    return `${head}\n... [${omitted} chars truncated] ...\n${tail}`
+    if (lines.length > 0 && utf8ByteLength(lines[0]) > maxBytes) {
+        return {
+            content: "",
+            truncated: true,
+            truncatedBy: "bytes",
+            totalLines,
+            totalBytes,
+            outputLines: 0,
+            outputBytes: 0,
+            lastLinePartial: false,
+            firstLineExceedsLimit: true,
+            maxLines,
+            maxBytes,
+        }
+    }
+
+    const outputLinesArr: string[] = []
+    let outputBytesCount = 0
+    let truncatedBy: "lines" | "bytes" = "lines"
+
+    for (let i = 0; i < lines.length && i < maxLines; i++) {
+        const line = lines[i]
+        const lineBytes = utf8ByteLength(line) + (i > 0 ? 1 : 0)
+        if (outputBytesCount + lineBytes > maxBytes) {
+            truncatedBy = "bytes"
+            break
+        }
+
+        outputLinesArr.push(line)
+        outputBytesCount += lineBytes
+    }
+
+    if (outputLinesArr.length >= maxLines && outputBytesCount <= maxBytes) {
+        truncatedBy = "lines"
+    }
+
+    const outputContent = outputLinesArr.join("\n")
+    const finalOutputBytes = utf8ByteLength(outputContent)
+
+    return {
+        content: outputContent,
+        truncated: true,
+        truncatedBy,
+        totalLines,
+        totalBytes,
+        outputLines: outputLinesArr.length,
+        outputBytes: finalOutputBytes,
+        lastLinePartial: false,
+        firstLineExceedsLimit: false,
+        maxLines,
+        maxBytes,
+    }
+}
+
+/**
+ * Truncate content from the tail (keep last N lines/bytes).
+ * May return partial first line if only tail bytes of the last line fit.
+ */
+export function truncateTail(
+    content: string,
+    options: TruncationOptions = {},
+): TruncationResult {
+    const maxLines = options.maxLines ?? DEFAULT_MAX_LINES
+    const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES
+
+    const totalBytes = utf8ByteLength(content)
+    const lines = splitLinesForCounting(content)
+    const totalLines = lines.length
+
+    if (totalLines <= maxLines && totalBytes <= maxBytes) {
+        return {
+            content,
+            truncated: false,
+            truncatedBy: null,
+            totalLines,
+            totalBytes,
+            outputLines: totalLines,
+            outputBytes: totalBytes,
+            lastLinePartial: false,
+            firstLineExceedsLimit: false,
+            maxLines,
+            maxBytes,
+        }
+    }
+
+    const outputLinesArr: string[] = []
+    let outputBytesCount = 0
+    let truncatedBy: "lines" | "bytes" = "lines"
+    let lastLinePartial = false
+
+    for (let i = lines.length - 1; i >= 0 && outputLinesArr.length < maxLines; i--) {
+        const line = lines[i]
+        const lineBytes = utf8ByteLength(line) + (outputLinesArr.length > 0 ? 1 : 0)
+
+        if (outputBytesCount + lineBytes > maxBytes) {
+            truncatedBy = "bytes"
+            if (outputLinesArr.length === 0) {
+                const truncatedLine = truncateStringToBytesFromEnd(line, maxBytes)
+                outputLinesArr.unshift(truncatedLine)
+                outputBytesCount = utf8ByteLength(truncatedLine)
+                lastLinePartial = true
+            }
+            break
+        }
+
+        outputLinesArr.unshift(line)
+        outputBytesCount += lineBytes
+    }
+
+    if (outputLinesArr.length >= maxLines && outputBytesCount <= maxBytes) {
+        truncatedBy = "lines"
+    }
+
+    const outputContent = outputLinesArr.join("\n")
+    const finalOutputBytes = utf8ByteLength(outputContent)
+
+    return {
+        content: outputContent,
+        truncated: true,
+        truncatedBy,
+        totalLines,
+        totalBytes,
+        outputLines: outputLinesArr.length,
+        outputBytes: finalOutputBytes,
+        lastLinePartial,
+        firstLineExceedsLimit: false,
+        maxLines,
+        maxBytes,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -72,11 +227,66 @@ export function formatToolResultMessage(
         : 0
     const command = typeof result.command === "string" && result.command.length > 0
         ? result.command
-        : formatPseudoCommand(toolCall)
+        : (() => {
+            const unixCommand = formatToolCallAsUnixCommand(toolCall)
+            if (unixCommand) {
+                return unixCommand
+            }
 
-    const stdout = truncatePresentationOutput(renderToolStdout(result))
-    const stderr = renderToolStderr(result, exitCode)
-    const metaLine = buildMetaLine(toolCall, result)
+            const parts = [toolCall.name]
+            for (const [name, value] of Object.entries(toolCall.parameters ?? {})) {
+                if (value === undefined || value === null) {
+                    continue
+                }
+
+                if (typeof value === "boolean") {
+                    parts.push(value ? `--${name}` : `--no-${name}`)
+                    continue
+                }
+
+                if (typeof value === "string" && !value.includes("\n") && !/\s/.test(value)) {
+                    parts.push(`--${name}`, value)
+                    continue
+                }
+
+                parts.push(`--${name}`, JSON.stringify(value))
+            }
+
+            return parts.join(" ")
+        })()
+
+    const stdout = truncatePresentationOutput(renderToolStdout(result), toolCall)
+    const stderr = typeof result.stderr === "string" && result.stderr.length > 0
+        ? result.stderr
+        : exitCode !== 0 && typeof result.error === "string"
+            ? result.error
+            : ""
+    const metaLine = (() => {
+        const commandName = (result as ToolResult & { command_name?: unknown }).command_name
+        const route = (result as ToolResult & { route?: unknown }).route
+        const metadata: Record<string, string | number | boolean> = {
+            tool: typeof commandName === "string" ? commandName : toolCall.name,
+            route: typeof route === "string" ? route : toolCall.name,
+        }
+
+        for (const source of [toolCall.parameters ?? {}, result as Record<string, unknown>]) {
+            for (const key of ["path", "url", "query", "taskId", "task_id", "pattern"]) {
+                const value = source[key]
+                if (typeof value === "string" && value.length > 0) {
+                    metadata[key] = value
+                }
+            }
+        }
+
+        const pairs = Object.entries(metadata)
+        if (pairs.length === 0) {
+            return ""
+        }
+
+        return `[meta] ${pairs
+            .map(([key, value]) => `${key}=${typeof value === "string" ? JSON.stringify(value) : String(value)}`)
+            .join(" ")}`
+    })()
     const lines = [`$ ${command}`]
 
     if (stdout) {
@@ -99,7 +309,10 @@ export function formatToolResultMessage(
         lines.push(metaLine)
     }
 
-    lines.push(`[exit:${exitCode} | ${formatDuration(durationMs)}]`)
+    const duration = durationMs >= 1000
+        ? `${(durationMs / 1000).toFixed(1)}s`
+        : `${Math.max(0, Math.round(durationMs))}ms`
+    lines.push(`[exit:${exitCode} | ${duration}]`)
     return lines.join("\n")
 }
 
@@ -167,7 +380,14 @@ export function parseToolResultMessage(content: string): {
             const exitMatch = line.match(/^\[exit:(-?\d+)\s*\|\s*([^\]]+)\]$/)
             if (exitMatch) {
                 exitCode = Number(exitMatch[1])
-                durationMs = parseDuration(exitMatch[2])
+                const rawDuration = exitMatch[2].trim().toLowerCase()
+                if (rawDuration.endsWith("ms")) {
+                    durationMs = Number(rawDuration.slice(0, -2)) || 0
+                } else if (rawDuration.endsWith("s")) {
+                    durationMs = Math.round((Number(rawDuration.slice(0, -1)) || 0) * 1000)
+                } else {
+                    durationMs = Number(rawDuration) || 0
+                }
                 inStderr = false
                 continue
             }
@@ -179,7 +399,39 @@ export function parseToolResultMessage(content: string): {
             }
         }
 
-        const metadata = parseMetadata(metaLine)
+        const metadata = (() => {
+            if (!metaLine) {
+                return {}
+            }
+
+            const values: Record<string, any> = {}
+            const regex = /(\w+)=((?:"(?:[^"\\]|\\.)*")|\S+)/g
+            let match: RegExpExecArray | null
+            while ((match = regex.exec(metaLine)) !== null) {
+                const key = match[1]
+                const rawValue = match[2]
+                if (rawValue.startsWith('"')) {
+                    try {
+                        values[key] = JSON.parse(rawValue)
+                    } catch {
+                        values[key] = rawValue.slice(1, -1)
+                    }
+                    continue
+                }
+
+                if (rawValue === "true") {
+                    values[key] = true
+                } else if (rawValue === "false") {
+                    values[key] = false
+                } else if (!Number.isNaN(Number(rawValue))) {
+                    values[key] = Number(rawValue)
+                } else {
+                    values[key] = rawValue
+                }
+            }
+
+            return values
+        })()
         const stdout = stdoutLines.join("\n").trim()
         const stderr = stderrLines.join("\n").trim()
         const error = errorLine ?? (exitCode === 0 ? undefined : stderr || undefined)
@@ -290,137 +542,148 @@ function renderToolStdout(result: ToolResult): string {
     return JSON.stringify(remainder, null, 2)
 }
 
-function renderToolStderr(result: ToolResult, exitCode: number): string {
-    if (typeof result.stderr === "string" && result.stderr.length > 0) {
-        return result.stderr
-    }
-
-    if (exitCode !== 0 && typeof result.error === "string") {
-        return result.error
-    }
-
-    return ""
-}
-
-function truncatePresentationOutput(output: string): string {
+function truncatePresentationOutput(output: string, toolCall: ToolCall): string {
     if (!output) {
         return ""
     }
 
-    const lines = output.split(/\r?\n/)
-    if (lines.length <= MAX_PRESENTATION_LINES && output.length <= MAX_PRESENTATION_CHARS) {
+    const isBash = isBashLikeToolCall(toolCall)
+    const truncation = isBash
+        ? truncateTail(output, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES })
+        : truncateHead(output, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES })
+
+    if (!truncation.truncated) {
         return output
     }
 
-    const truncated = lines.slice(0, MAX_PRESENTATION_LINES).join("\n")
-    return `${truncated}\n--- output truncated (${lines.length} lines, ${output.length} chars) ---\nUse more specific commands, filters, or line ranges to narrow the result.`
+    const suffix = buildTruncationNotice(toolCall, truncation)
+    if (!suffix) {
+        return truncation.content
+    }
+
+    if (!truncation.content) {
+        return suffix
+    }
+
+    return `${truncation.content}\n\n${suffix}`
 }
 
-function formatPseudoCommand(toolCall: ToolCall): string {
-    const unixCommand = formatToolCallAsUnixCommand(toolCall)
-    if (unixCommand) {
-        return unixCommand
+function buildTruncationNotice(toolCall: ToolCall, truncation: TruncationResult): string {
+    const kind = (() => {
+        if (isBashLikeToolCall(toolCall)) {
+            return "bash" as const
+        }
+
+        const normalized = toolCall.name.toLowerCase()
+        if (normalized.includes("read")) return "read" as const
+        if (normalized === "ls" || normalized.includes("list")) return "ls" as const
+        if (normalized.includes("grep") || normalized.includes("search")) return "grep" as const
+        if (normalized.includes("find")) return "find" as const
+        return "default" as const
+    })()
+
+    if (kind === "read") {
+        if (truncation.firstLineExceedsLimit) {
+            return `[Line 1 exceeds ${formatSize(truncation.maxBytes)} limit. Use bash to read a bounded byte range.]`
+        }
+
+        const endLine = Math.max(0, truncation.outputLines)
+        const nextOffset = endLine + 1
+        if (truncation.truncatedBy === "lines") {
+            return `[Showing lines 1-${endLine} of ${truncation.totalLines}. Use offset=${nextOffset} to continue.]`
+        }
+        return `[Showing lines 1-${endLine} of ${truncation.totalLines} (${formatSize(truncation.maxBytes)} limit). Use offset=${nextOffset} to continue.]`
     }
 
-    const parts = [toolCall.name]
-
-    for (const [name, value] of Object.entries(toolCall.parameters ?? {})) {
-        if (value === undefined || value === null) {
-            continue
+    if (kind === "bash") {
+        const startLine = truncation.totalLines - truncation.outputLines + 1
+        const endLine = truncation.totalLines
+        if (truncation.lastLinePartial) {
+            return `[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line exceeds ${formatSize(truncation.maxBytes)}).]`
         }
-
-        if (typeof value === "boolean") {
-            parts.push(value ? `--${name}` : `--no-${name}`)
-            continue
+        if (truncation.truncatedBy === "lines") {
+            return `[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}.]`
         }
-
-        if (typeof value === "string" && !value.includes("\n") && !/\s/.test(value)) {
-            parts.push(`--${name}`, value)
-            continue
-        }
-
-        parts.push(`--${name}`, JSON.stringify(value))
+        return `[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(truncation.maxBytes)} limit).]`
     }
 
-    return parts.join(" ")
+    if (kind === "grep") {
+        return `[${formatSize(truncation.maxBytes)} limit reached. Refine pattern or narrow path.]`
+    }
+
+    if (kind === "find") {
+        return `[${formatSize(truncation.maxBytes)} limit reached. Refine pattern or increase limit.]`
+    }
+
+    if (kind === "ls") {
+        return `[${formatSize(truncation.maxBytes)} limit reached. Use a narrower path.]`
+    }
+
+    return `[Output truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}).]`
 }
 
-function buildMetaLine(toolCall: ToolCall, result: ToolResult): string {
-    const commandName = (result as ToolResult & { command_name?: unknown }).command_name
-    const route = (result as ToolResult & { route?: unknown }).route
-    const metadata: Record<string, string | number | boolean> = {
-        tool: typeof commandName === "string" ? commandName : toolCall.name,
-        route: typeof route === "string" ? route : toolCall.name,
+function isBashLikeToolCall(toolCall: ToolCall): boolean {
+    if (toolCall.kind === "bash" || toolCall.kind === "background_bash") {
+        return true
     }
 
-    for (const source of [toolCall.parameters ?? {}, result as Record<string, unknown>]) {
-        for (const key of ["path", "url", "query", "taskId", "task_id", "pattern"]) {
-            const value = source[key]
-            if (typeof value === "string" && value.length > 0) {
-                metadata[key] = value
-            }
-        }
-    }
-
-    const pairs = Object.entries(metadata)
-    if (pairs.length === 0) {
-        return ""
-    }
-
-    return `[meta] ${pairs
-        .map(([key, value]) => `${key}=${typeof value === "string" ? JSON.stringify(value) : String(value)}`)
-        .join(" ")}`
+    const normalized = toolCall.name.toLowerCase()
+    return normalized === "bash" || normalized === "backgroundbash"
 }
 
-function parseMetadata(text: string): Record<string, any> {
+function utf8ByteLength(text: string): number {
     if (!text) {
-        return {}
+        return 0
     }
 
-    const values: Record<string, any> = {}
-    const regex = /(\w+)=((?:"(?:[^"\\]|\\.)*")|\S+)/g
-    let match: RegExpExecArray | null
-    while ((match = regex.exec(text)) !== null) {
-        const key = match[1]
-        const rawValue = match[2]
-        if (rawValue.startsWith('"')) {
-            try {
-                values[key] = JSON.parse(rawValue)
-            } catch {
-                values[key] = rawValue.slice(1, -1)
+    return new TextEncoder().encode(text).length
+}
+
+function truncateStringToBytesFromEnd(str: string, maxBytes: number): string {
+    if (maxBytes <= 0) return ""
+
+    let outputBytes = 0
+    let start = str.length
+    for (let i = str.length; i > 0;) {
+        let characterStart = i - 1
+        const code = str.charCodeAt(characterStart)
+        let characterBytes: number
+
+        if (code >= 0xdc00 && code <= 0xdfff && characterStart > 0) {
+            const previous = str.charCodeAt(characterStart - 1)
+            if (previous >= 0xd800 && previous <= 0xdbff) {
+                characterStart--
+                characterBytes = 4
+            } else {
+                characterBytes = 3
             }
-            continue
-        }
-
-        if (rawValue === "true") {
-            values[key] = true
-        } else if (rawValue === "false") {
-            values[key] = false
-        } else if (!Number.isNaN(Number(rawValue))) {
-            values[key] = Number(rawValue)
+        } else if (code >= 0xd800 && code <= 0xdbff) {
+            characterBytes = 3
         } else {
-            values[key] = rawValue
+            characterBytes = code <= 0x7f ? 1 : code <= 0x7ff ? 2 : 3
         }
+
+        if (outputBytes + characterBytes > maxBytes) break
+        outputBytes += characterBytes
+        start = characterStart
+        i = characterStart
     }
 
-    return values
+    return str.slice(start)
 }
 
-function formatDuration(durationMs: number): string {
-    if (durationMs >= 1000) {
-        return `${(durationMs / 1000).toFixed(1)}s`
+function formatSize(bytes: number): string {
+    if (bytes < 1024) {
+        return `${bytes}B`
     }
-    return `${Math.max(0, Math.round(durationMs))}ms`
+
+    const kb = bytes / 1024
+    if (kb < 1024) {
+        return `${kb.toFixed(1)}KB`
+    }
+
+    const mb = kb / 1024
+    return `${mb.toFixed(1)}MB`
 }
 
-function parseDuration(raw: string): number {
-    const trimmed = raw.trim().toLowerCase()
-    if (trimmed.endsWith("ms")) {
-        return Number(trimmed.slice(0, -2)) || 0
-    }
-    if (trimmed.endsWith("s")) {
-        return Math.round((Number(trimmed.slice(0, -1)) || 0) * 1000)
-    }
-    return Number(trimmed) || 0
-}
 

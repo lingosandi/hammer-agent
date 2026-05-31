@@ -32,7 +32,6 @@ import {
     extractTruncatedToolInfo,
 } from "./prompt-helpers"
 import {
-    truncateToolResult,
     executeToolSafe,
     formatToolResultMessage,
 } from "./tool-helpers"
@@ -353,11 +352,8 @@ export class AgentLoop {
                     result = this.deps.formatToolResult(result, tc.name)
                 }
 
-                // Truncate
-                let resultStr = formatToolResultMessage(tc, result)
-                resultStr = truncateToolResult(resultStr, {
-                    strategy: "head-tail",
-                })
+                // Formatting includes tool-specific truncation guidance.
+                const resultStr = formatToolResultMessage(tc, result)
 
                 // Update truncation info on first tool
                 if (wasTruncated && this._truncatedToolInfo && i === 0) {
